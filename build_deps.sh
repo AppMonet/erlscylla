@@ -29,9 +29,9 @@ echo "building deps on $OS / $KERNEL - ${CPP_DRIVER_REPO} ${CPP_DRIVER_REV}"
 case $OS in
 Linux)
 	case $KERNEL in
-	fedora)
+	centos)
 
-		echo "Linux, CentOS or Fedora"
+		echo "Linux, CentOS"
 		sudo yum -y install automake cmake gcc-c++ git libtool openssl-devel wget
 		OUTPUT=$(ldconfig -p | grep libuv)
 		if [[ $(echo $OUTPUT) != "" ]]; then
