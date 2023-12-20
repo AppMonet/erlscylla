@@ -62,12 +62,12 @@ endif
 
 CXXFLAGS+=  -g -std=c++11 -Wextra -Werror -fno-rtti \
 			-Wno-unused-local-typedefs -Wno-unused-parameter -Wno-missing-field-initializers \
-            -I $(BASEDIR)/_build/deps/cpp-driver/include \
-            -I $(BASEDIR)/_build/deps/cpp-driver/src \
-            -I $(BASEDIR)/_build/deps/cpp-driver/src/third_party/sparsehash/src \
+            -I $(BASEDIR)/_build/deps/cpp-rust-driver/include \
+            -I $(BASEDIR)/_build/deps/cpp-rust-driver/src \
+            -I $(BASEDIR)/_build/deps/cpp-rust-driver/src/third_party/sparsehash/src \
 
-LDFLAGS +=  -L$(BASEDIR)/_build/deps/cpp-driver/build \
-            -lscylla-cpp-driver_static \
+LDFLAGS +=  -L$(BASEDIR)/_build/deps/cpp-rust-driver/build \
+            -lscylla-cpp-rust-driver_static \
             -luv \
             -lstdc++ \
             -lssl \

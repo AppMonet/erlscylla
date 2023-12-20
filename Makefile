@@ -22,7 +22,7 @@ BENCH_PROFILE_ARGS=-pa _build/bench/lib/erlcass/benchmarks -pa _build/bench/lib/
 
 C_SRC_DIR = $(shell pwd)/c_src
 C_SRC_ENV ?= $(C_SRC_DIR)/env.mk
-CPP_DRIVER_REV ?= bb35fe103024c38be98fbe21306440ece908935a
+CPP_DRIVER_REV ?= 35e2cae13e9f7bfe2c3c0863f6c5f067b2f2c7d7
 
 #regenerate all the time the env.mk
 ifneq ($(wildcard $(C_SRC_DIR)),)
@@ -75,8 +75,8 @@ cppcheck:
 	cppcheck -j $(NCPUS) --enable=all \
 	 		 -I /usr/local/opt/openssl/include \
 	 		 -I /usr/local/include \
-	 		 -I _build/deps/cpp-driver/include \
-	 		 -I _build/deps/cpp-driver/src \
+	 		 -I _build/deps/cpp-rust-driver/include \
+	 		 -I _build/deps/cpp-rust-driver/src \
 	 		 -I $(ERTS_INCLUDE_DIR) \
 	 		 -I $(ERL_INTERFACE_INCLUDE_DIR) \
 	 		 --suppress=*:*_build/deps/* \

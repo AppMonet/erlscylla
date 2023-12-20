@@ -4,7 +4,7 @@ set -e
 DEPS_LOCATION=_build/deps
 
 if [ -d "$DEPS_LOCATION" ]; then
-	echo "cpp-driver fork already exist. delete $DEPS_LOCATION for a fresh checkout."
+	echo "cpp-rust-driver fork already exist. delete $DEPS_LOCATION for a fresh checkout."
 	exit 0
 fi
 
@@ -22,7 +22,7 @@ fi
 #echo $OS
 #echo $KERNEL
 
-CPP_DRIVER_REPO=https://github.com/scylladb/cpp-driver.git
+CPP_DRIVER_REPO=https://github.com/scylladb/cpp-rust-driver.git
 CPP_DRIVER_REV=$1
 echo "building deps on $OS / $KERNEL - ${CPP_DRIVER_REPO} ${CPP_DRIVER_REV}"
 
@@ -98,8 +98,8 @@ mkdir -p $DEPS_LOCATION
 #checkout repo
 
 pushd $DEPS_LOCATION
-git clone -b master ${CPP_DRIVER_REPO} cpp-driver
-pushd cpp-driver
+git clone -b master ${CPP_DRIVER_REPO} cpp-rust-driver
+pushd cpp-rust-driver
 pwd
 git reset --hard ${CPP_DRIVER_REV}
 popd
@@ -107,8 +107,8 @@ popd
 
 #build
 
-mkdir -p $DEPS_LOCATION/cpp-driver/build
-pushd $DEPS_LOCATION/cpp-driver/build
+mkdir -p $DEPS_LOCATION/cpp-rust-driver/build
+pushd $DEPS_LOCATION/cpp-rust-driver/build
 echo "starting cmake of driver"
 cmake .. -DCASS_BUILD_STATIC=ON -DCMAKE_BUILD_TYPE=RELEASE
 
