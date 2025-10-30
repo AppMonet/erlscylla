@@ -12,3 +12,14 @@
 /.editorconfig
 /DerivedData/
 /cppcheck_results.xml
+/all_runs.html
+/index.html
+/suite.log.latest.html
+/ct_default.css
+/jquery-latest.js
+/jquery.tablesorter.min.js
+/ct_log_cache
+/ct_run.*
+/variables-ct@*
+/log_manual/
+/erl_crash.dump
