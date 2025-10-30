@@ -343,8 +343,13 @@ handle_call({batch_execute, BatchType, StmList, Options}, From, State) ->
 handle_call({add_prepare_statement, Identifier, Query}, From, State) ->
     case erlcass_stm_cache:find(Identifier) of
         false ->
-            ok = erlcass_nif:cass_session_prepare(State#state.session, self(), Query, {From, Identifier, Query}),
-            {noreply, State};
+            case erlcass_nif:cass_session_prepare(State#state.session, self(), Query, {From, Identifier, Query}) of
+                ok ->
+                    {noreply, State};
+                Error ->
+                    gen_server:reply(From, Error),
+                    {noreply, State}
+            end;
         _ ->
             {reply, {error, already_exist}, State}
     end;
@@ -438,7 +443,14 @@ session_create() ->
                     receive
                         {session_connected, Self, Result} ->
                             ?LOG_INFO("session ~p connection complete result: ~p", [Self, Result]),
-                            {ok, Session}
+                            case Result of
+                                ok ->
+                                    {ok, Session};
+                                Error ->
+                                    ?LOG_ERROR("session ~p failed to connect: ~p", [Self, Error]),
+                                    _ = do_close(Session, Self, ?CONNECT_TIMEOUT),
+                                    {error, {session_connect_failed, Error}}
+                            end
 
                     after ?CONNECT_TIMEOUT ->
                         ?LOG_ERROR("session ~p connection timeout", [Self]),
