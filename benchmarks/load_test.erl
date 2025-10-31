@@ -14,11 +14,14 @@
 -define(CLUSTER_NAME, <<"dc-beta">>).
 
 start() ->
-    case application:ensure_all_started(erlcass) of
-        {ok, [_|_]} ->
+    start(#{}).
+
+start(Opts) ->
+    case erlcass_sup:start_link(Opts) of
+        {ok, _Pid} ->
             ok;
-        UnexpectedError ->
-            UnexpectedError
+        Error ->
+            Error
     end.
 
 prepare_load_test_table() ->
@@ -81,8 +84,8 @@ do_profiling(NrProc, RequestsNr, RepeatNumber) ->
 
     eprof:start(),
     eprof:start_profiling([self()]),
-    ok = application:set_env(erlcass, keyspace, ?KEYSPACE),
-    start(),
+    ok = erlcass_sup:stop(),
+    ok = start(#{keyspace => ?KEYSPACE}),
 
     ProcsList = lists:seq(1, NrProc),
     {Time, _} = timer:tc( fun() -> run_test(RepeatNumber, NrProc, RequestsNr, ProcsList) end),

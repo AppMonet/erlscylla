@@ -10,8 +10,13 @@
 -define(ETS_PREPARED_STM_CACHE, erlcass_ets_prepared_stm_cache).
 
 create() ->
-    ?ETS_PREPARED_STM_CACHE = ets:new(?ETS_PREPARED_STM_CACHE, [set, named_table, public, {read_concurrency, true}]),
-    ok.
+    case ets:info(?ETS_PREPARED_STM_CACHE) of
+        undefined ->
+            ?ETS_PREPARED_STM_CACHE = ets:new(?ETS_PREPARED_STM_CACHE, [set, named_table, public, {read_concurrency, true}]),
+            ok;
+        _ ->
+            ok
+    end.
 
 set(Identifier, Query) ->
     true = ets:insert(?ETS_PREPARED_STM_CACHE, {Identifier, Query}).

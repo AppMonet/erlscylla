@@ -63,7 +63,7 @@
 ]).
 
 -record(erlcass_stm, {session, stm}).
--record(state, {session}).
+-record(state, {session, retry_ref = undefined, reconnect_delay = ?RECONNECT_DELAY}).
 
 -type query()           :: binary() | {binary(), integer()} | {binary(), list()}.
 -type statement_ref()   :: #erlcass_stm{}.
@@ -324,14 +324,20 @@ init([]) ->
     process_flag(trap_exit, true),
 
     ok = erlcass_stm_sessions:create(),
+    Config = erlcass_utils:get_config(),
+    ReconnectDelay = maps:get(reconnect_delay, Config, ?RECONNECT_DELAY),
 
-    case session_create() of
+    case attempt_connect() of
         {ok, SessionRef} ->
-            session_prepare_cached_statements(SessionRef),
-            {ok, #state{session = SessionRef}};
-        Error ->
-            {stop, Error, shutdown, #state{}}
+            {ok, #state{session = SessionRef, reconnect_delay = ReconnectDelay}};
+        {error, Reason} ->
+            ?LOG_WARNING("initial Cassandra connection failed: ~p", [Reason]),
+            {ok, schedule_reconnect(#state{session = undefined, reconnect_delay = ReconnectDelay})}
     end.
+
+handle_call(_Request, _From, #state{session = undefined} = State0) ->
+    State = maybe_schedule_reconnect(State0),
+    {reply, {error, erlcass_not_connected}, State};
 
 handle_call({execute_normal_statements, Identifier, StmRef, ReceiverPid, Tag}, _From, State) ->
     {reply, erlcass_nif:cass_session_execute(Identifier, State#state.session, StmRef, ReceiverPid, Tag), State};
@@ -384,11 +390,25 @@ handle_info({prepared_statement_result, Result, {From, Identifier, Query}}, #sta
     end,
     {noreply, State};
 
+handle_info({'timeout', TimerRef, reconnect}, #state{retry_ref = TimerRef} = State) ->
+    case attempt_connect() of
+        {ok, SessionRef} ->
+            ?LOG_INFO("session ~p reconnected successfully", [self()]),
+            {noreply, State#state{session = SessionRef, retry_ref = undefined}};
+        {error, Reason} ->
+            ?LOG_WARNING("session ~p reconnection failed: ~p", [self(), Reason]),
+            {noreply, schedule_reconnect(State#state{session = undefined, retry_ref = undefined})}
+    end;
+
+handle_info({'timeout', _TimerRef, reconnect}, State) ->
+    {noreply, State};
+
 handle_info(Info, State) ->
     ?LOG_ERROR("session ~p received unexpected message: ~p", [self(), Info]),
     {noreply, State}.
 
-terminate(Reason, #state {session = Session}) ->
+terminate(Reason, #state {session = Session, retry_ref = RetryRef}) ->
+    maybe_cancel_timer(RetryRef),
     Self = self(),
     ?LOG_INFO("closing session ~p with reason: ~p", [Self, Reason]),
 
@@ -464,6 +484,7 @@ session_create() ->
     end.
 
 session_prepare_cached_statements(SessionRef) ->
+    ok = erlcass_stm_sessions:reset(),
 
     FunPrepareStm = fun({Identifier, Query}) ->
         Tag = make_ref(),
@@ -490,6 +511,45 @@ session_prepare_cached_statements(SessionRef) ->
         end
     end,
     ok = lists:foreach(FunPrepareStm, erlcass_stm_cache:to_list()).
+
+attempt_connect() ->
+    case session_create() of
+        {ok, SessionRef} ->
+            case catch session_prepare_cached_statements(SessionRef) of
+                ok ->
+                    {ok, SessionRef};
+                {error, _} = Error ->
+                    _ = do_close(SessionRef, self(), ?CONNECT_TIMEOUT),
+                    Error;
+                Other ->
+                    _ = do_close(SessionRef, self(), ?CONNECT_TIMEOUT),
+                    {error, Other}
+            end;
+        Error ->
+            Error
+    end.
+
+schedule_reconnect(#state{retry_ref = undefined, reconnect_delay = Delay} = State) ->
+    TimerRef = erlang:start_timer(Delay, self(), reconnect),
+    State#state{retry_ref = TimerRef};
+schedule_reconnect(State) ->
+    State.
+
+maybe_schedule_reconnect(#state{session = undefined} = State) ->
+    schedule_reconnect(State);
+maybe_schedule_reconnect(State) ->
+    State.
+
+maybe_cancel_timer(undefined) ->
+    ok;
+maybe_cancel_timer(TimerRef) when is_reference(TimerRef) ->
+    _ = erlang:cancel_timer(TimerRef),
+    receive
+        {'timeout', TimerRef, reconnect} ->
+            ok
+    after 0 ->
+            ok
+    end.
 
 filter_stm_list(StmList) ->
     filter_stm_list(StmList, []).

@@ -6,6 +6,7 @@
 
 -define(RESPONSE_TIMEOUT, 20000).
 -define(CONNECT_TIMEOUT, 5000).
+-define(RECONNECT_DELAY, 5000).
 
 % data types
 

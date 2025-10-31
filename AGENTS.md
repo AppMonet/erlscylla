@@ -1,10 +1,13 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-Erlang sources live in `src/`, with shared headers in `include/`. Native C++ NIF code and build scripts sit in `c_src/`, and compiled artifacts land under `_build/`. Common Test suites and configs reside in `test/` (for example `integrity_test_SUITE.erl`), while Cassandra benchmarks and configs are in `benchmarks/`. Runtime assets such as shared libraries are staged in `priv/`. Keep generated logs in `log/` out of version control.
+Erlang sources live in `src/`, with shared headers in `include/`. Native C++ NIF code and build scripts sit in `c_src/`, and compiled artifacts land under `_build/`. Common Test suites and configs reside in `test/` (for example `integrity_test_SUITE.erl`), while Cassandra benchmarks and configs are in `benchmarks/`. Generated logs stay in `log/`. The driver now exposes the OTP supervisor `erlcass_sup` (instead of an application) so consumers can embed it directly in their own supervision trees.
 
 ## Build, Test, and Development Commands
 Use `make compile` (default) or `rebar3 compile` to build Erlang modules; both invoke the `rebar3` pipeline and will regenerate `c_src/env.mk` automatically. Run native driver builds with `make nif_compile` and clean them with `make nif_clean`. Execute the Common Test suite via `make ct`, which wraps `ct_run` with the correct `_build` paths and `test/sys.config`. For high-load validation, run `make setup_benchmark` once, then `make benchmark MODULE=erlcass PROCS=100 REQ=100000`.
+
+## Runtime Integration
+Start the driver with `erlcass_sup:start_link(Opts)` or embed `erlcass_sup:child_spec(Opts)` in your tree. Pass connection settings as a map or proplist (for example `#{cluster_options => [{contact_points, <<"127.0.0.1">>}]}`) instead of relying on application env. The supervisor boots even when Scylla/Cassandra is unavailable, so consumer applications can start independently; driver calls return `{error, erlcass_not_connected}` until a session reconnects. Call `erlcass_sup:stop/0` during teardown to release cluster resources.
 
 ## Coding Style & Naming Conventions
 Follow OTP-style indentation (four spaces) and prefer snake_case for modules, functions, and variables (`erlcass_session`). Export only what is needed; `rebar.config` enforces `warnings_as_errors` and flags full exports, so clear Dialyzer and compiler warnings before pushing. Macro names stay upper snake case (`?CASS_LOG_WARN`). For C++ code in `c_src/`, keep includes sorted and run `make cpplint` or `make cppcheck` when touching native sources.

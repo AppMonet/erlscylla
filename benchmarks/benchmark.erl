@@ -17,15 +17,17 @@
     start/1
 ]).
 
+start(?DRIVER_ERLCASS) ->
+    case erlcass_sup:start_link() of
+        {ok, _Pid} ->
+            ok = erlcass:add_prepare_statement(testing_query, {?QUERY, ?CASS_CONSISTENCY_ONE});
+        _ ->
+            ok
+    end;
 start(Module) ->
     case application:ensure_all_started(Module) of
         {ok, [_H|_T]} ->
-            case Module of
-                ?DRIVER_ERLCASS ->
-                    ok = erlcass:add_prepare_statement(testing_query, {?QUERY, ?CASS_CONSISTENCY_ONE});
-                _ ->
-                    ok
-            end;
+            ok;
         _ ->
             ok
     end.
