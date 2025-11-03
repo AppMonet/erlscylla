@@ -11,9 +11,17 @@
 #include <string.h>
 #include <memory>
 #include <atomic>
+#include <new>
 
 struct enif_cass_session
 {
+    enif_cass_session()
+        : session(NULL), connected(false)
+    {
+    }
+
+    ~enif_cass_session() = default;
+
     CassSession* session;
     std::atomic<bool> connected;
 };
@@ -85,6 +93,8 @@ void nif_cass_session_free(ErlNifEnv* env, void* obj)
 
     if(enif_session->session != NULL)
         cass_session_free(enif_session->session);
+
+    enif_session->~enif_cass_session();
 }
 
 void on_session_connect(CassFuture* future, void* user_data)
@@ -219,8 +229,8 @@ ERL_NIF_TERM nif_cass_session_new(ErlNifEnv* env, int argc, const ERL_NIF_TERM a
     if(enif_session == NULL)
         return make_error(env, erlcass::kFailedToAllocResourceMsg);
 
+    new (enif_session) enif_cass_session();
     enif_session->session = cass_session_new();
-    enif_session->connected.store(false);
 
     ERL_NIF_TERM term = enif_make_resource(env, enif_session);
     enif_release_resource(enif_session);
@@ -321,7 +331,8 @@ ERL_NIF_TERM nif_cass_session_prepare(ErlNifEnv* env, int argc, const ERL_NIF_TE
     if(!enif_is_identical(ATOMS.atomOk, parse_result))
         return parse_result;
 
-    if(!enif_session->connected.load())
+    bool connected = enif_session->connected.load();
+    if(!connected)
         return make_error(env, erlcass::kNoConnectionsAvailableMsg);
 
     callback_statement_info* callback = static_cast<callback_statement_info*>(enif_alloc(sizeof(callback_statement_info)));
