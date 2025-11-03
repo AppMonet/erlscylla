@@ -40,11 +40,12 @@ suite() ->
     [{timetrap, {seconds, 40}}].
 
 init_per_suite(Config) ->
-    {ok,  _} = application:ensure_all_started(erlcass),
+    ClusterOpts = application:get_env(erlcass, cluster_options, []),
+    {ok, _} = erlcass_sup:start_link(#{cluster_options => ClusterOpts}),
     Config.
 
 end_per_suite(_Config) ->
-    application:stop(erlcass).
+    ok = erlcass_sup:stop().
 
 create_keyspace(_Config) ->
     case erlcass:query(<<"DROP KEYSPACE erlang_driver_test">>) of
