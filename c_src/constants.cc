@@ -14,6 +14,7 @@ const char kBindFailedUnknownColumnType[] = "bind failed. not implemented column
 const char kFailedToSetUnknownType[] = "failed to set unknown type";
 const char kUnknownKeyspace[] = "keyspace doesn't exist";
 const char kUnknownTable[] = "table doesn't exist";
+const char kNoConnectionsAvailableMsg[] = "no Cassandra connections available";
 
 // misc atoms
 
