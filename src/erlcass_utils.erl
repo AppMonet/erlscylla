@@ -62,7 +62,8 @@ normalize_config(_) ->
 apply_defaults(Map) ->
     Defaults = #{
         log_level => ?CASS_LOG_WARN,
-        reconnect_delay => ?RECONNECT_DELAY
+        reconnect_delay => ?RECONNECT_DELAY,
+        prepared_statements => []
     },
     maps:merge(Defaults, canonicalize(Map)).
 

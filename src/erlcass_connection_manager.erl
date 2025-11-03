@@ -14,10 +14,12 @@
 start_link() ->
     start_link(#{}).
 
-start_link(Opts) ->
+start_link(Opts) when is_list(Opts) ->
+    start_link(maps:from_list(Opts));
+start_link(Opts) when is_map(Opts) ->
     gen_server:start_link(?MODULE, Opts, []).
 
-init(_Opts) ->
+init(Opts) ->
     process_flag(trap_exit, true),
     Initial = initial_backoff(),
     State = #{
@@ -27,7 +29,8 @@ init(_Opts) ->
         timer_ref => undefined,
         erlcass_pid => undefined,
         erlcass_monitor => undefined,
-        cluster_ready => false
+        cluster_ready => false,
+        prepared_statements => maps:get(prepared_statements, Opts, [])
     },
     {ok, State, 0}.
 
@@ -75,8 +78,13 @@ attempt_connect(State0) ->
         {ok, State2} ->
             case start_erlcass(State2) of
                 {ok, State3} ->
-                    ?LOG_INFO("erlcass connection established", []),
-                    {noreply, State3};
+                    case prepare_statements(State3) of
+                        {ok, State4} ->
+                            ?LOG_INFO("erlcass connection established", []),
+                            {noreply, State4};
+                        {error, Reason, State4} ->
+                            schedule_retry(State4, {prepare_failed, Reason})
+                    end;
                 {error, Reason, State3} ->
                     schedule_retry(State3, {start_child_failed, Reason})
             end;
@@ -228,6 +236,34 @@ next_backoff(Delay, Max) ->
         false ->
             Next
     end.
+
+prepare_statements(State) ->
+    Statements = maps:get(prepared_statements, State, []),
+    case do_prepare_statements(Statements) of
+        ok ->
+            {ok, State};
+        {error, Reason} ->
+            {error, Reason, State}
+    end.
+
+do_prepare_statements([]) ->
+    ok;
+do_prepare_statements([{Name, Query} | Rest]) ->
+    ?LOG_INFO("preparing scylla statement ~p", [Name]),
+    case catch erlcass:add_prepare_statement(Name, Query) of
+        ok ->
+            do_prepare_statements(Rest);
+        {error, already_exist} ->
+            do_prepare_statements(Rest);
+        {error, Reason} ->
+            {error, {Name, Reason}};
+        {'EXIT', Reason} ->
+            {error, {Name, Reason}};
+        Other ->
+            {error, {Name, Other}}
+    end;
+do_prepare_statements(Other) ->
+    {error, {invalid_prepared_statements, Other}}.
 
 call_erlcass(Module, Function, Args) ->
     try apply(Module, Function, Args) of

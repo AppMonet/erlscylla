@@ -56,19 +56,20 @@ stop() ->
     end.
 
 init(Opts) ->
-    _Config = erlcass_utils:set_config(Opts),
+    Config = erlcass_utils:set_config(Opts),
     ok = erlcass_stm_cache:create(),
+    ConnectionOpts = #{prepared_statements => maps:get(prepared_statements, Config, [])},
     Children = [
         proccess(erlcass_log, infinity),
-        connection_manager()
+        connection_manager(ConnectionOpts)
     ],
     {ok, {{rest_for_one, 10, 1}, Children}}.
 
 proccess(Name, WaitForClose) ->
     {Name, {Name, start_link, []}, permanent, WaitForClose, worker, [Name]}.
 
-connection_manager() ->
-    {erlcass_connection_manager, {erlcass_connection_manager, start_link, []}, permanent, 5_000,
+connection_manager(Opts) ->
+    {erlcass_connection_manager, {erlcass_connection_manager, start_link, [Opts]}, permanent, 5_000,
         worker, [erlcass_connection_manager]}.
 
 erlcass_child_spec() ->
