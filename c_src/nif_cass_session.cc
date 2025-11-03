@@ -10,10 +10,20 @@
 
 #include <string.h>
 #include <memory>
+#include <atomic>
+#include <new>
 
 struct enif_cass_session
 {
+    enif_cass_session()
+        : session(NULL), connected(false)
+    {
+    }
+
+    ~enif_cass_session() = default;
+
     CassSession* session;
+    std::atomic<bool> connected;
 };
 
 struct callback_info
@@ -21,8 +31,10 @@ struct callback_info
     ErlNifEnv* env;
     ErlNifPid pid;
     ERL_NIF_TERM arguments;
+    ERL_NIF_TERM session_term;
     bool fire_and_forget;
     CassStatement* paged_statment;
+    enif_cass_session* session;
 };
 
 struct callback_statement_info
@@ -43,7 +55,9 @@ callback_info* callback_info_alloc(ErlNifEnv* env, const ErlNifPid& pid, ERL_NIF
     callback->env = enif_alloc_env();
     callback->arguments = enif_make_copy(callback->env, arg);
     callback->fire_and_forget = false;
+    callback->session_term = 0;
     callback->paged_statment = NULL;
+    callback->session = NULL;
     return callback;
 }
 
@@ -53,8 +67,16 @@ callback_info* callback_info_alloc(ErlNifEnv* env, ERL_NIF_TERM identifier)
     callback->env = enif_alloc_env();
     callback->arguments = enif_make_copy(callback->env, identifier);
     callback->fire_and_forget = true;
+    callback->session_term = 0;
     callback->paged_statment = NULL;
+    callback->session = NULL;
     return callback;
+}
+
+static void callback_info_attach_session(callback_info* cb, enif_cass_session* session)
+{
+    cb->session = session;
+    cb->session_term = enif_make_resource(cb->env, session);
 }
 
 void callback_info_free(callback_info* cb)
@@ -71,6 +93,8 @@ void nif_cass_session_free(ErlNifEnv* env, void* obj)
 
     if(enif_session->session != NULL)
         cass_session_free(enif_session->session);
+
+    enif_session->~enif_cass_session();
 }
 
 void on_session_connect(CassFuture* future, void* user_data)
@@ -80,9 +104,17 @@ void on_session_connect(CassFuture* future, void* user_data)
     ERL_NIF_TERM result;
 
     if (cass_future_error_code(future) != CASS_OK)
+    {
         result = cass_future_error_to_nif_term(cb->env, future);
+        if(cb->session != NULL)
+            cb->session->connected.store(false);
+    }
     else
+    {
         result = ATOMS.atomOk;
+        if(cb->session != NULL)
+            cb->session->connected.store(true);
+    }
 
     enif_send(NULL, &cb->pid, cb->env, enif_make_tuple3(cb->env, ATOMS.atomSessionConnected, cb->arguments, result));
     callback_info_free(cb);
@@ -100,6 +132,8 @@ void on_session_closed(CassFuture* future, void* user_data)
         result = ATOMS.atomOk;
 
     enif_send(NULL, &cb->pid, cb->env, enif_make_tuple3(cb->env, ATOMS.atomSessionClosed, cb->arguments, result));
+    if(cb->session != NULL)
+        cb->session->connected.store(false);
     callback_info_free(cb);
 }
 
@@ -195,6 +229,7 @@ ERL_NIF_TERM nif_cass_session_new(ErlNifEnv* env, int argc, const ERL_NIF_TERM a
     if(enif_session == NULL)
         return make_error(env, erlcass::kFailedToAllocResourceMsg);
 
+    new (enif_session) enif_cass_session();
     enif_session->session = cass_session_new();
 
     ERL_NIF_TERM term = enif_make_resource(env, enif_session);
@@ -225,6 +260,8 @@ ERL_NIF_TERM nif_cass_session_connect(ErlNifEnv* env, int argc, const ERL_NIF_TE
     if(callback == NULL)
         return make_error(env, erlcass::kFailedToCreateCallbackInfoMsg);
 
+    callback_info_attach_session(callback, enif_session);
+
     CassFuture* future;
 
     if(argc == 3)
@@ -233,8 +270,11 @@ ERL_NIF_TERM nif_cass_session_connect(ErlNifEnv* env, int argc, const ERL_NIF_TE
         future = cass_session_connect(enif_session->session, data->cluster);
 
     CassError error = cass_future_set_callback(future, on_session_connect, callback);
-
     cass_future_free(future);
+
+    if(error != CASS_OK)
+        callback_info_free(callback);
+
     return cass_error_to_nif_term(env, error);
 }
 
@@ -256,12 +296,17 @@ ERL_NIF_TERM nif_cass_session_close(ErlNifEnv* env, int argc, const ERL_NIF_TERM
     if(callback == NULL)
         return make_error(env, erlcass::kFailedToCreateCallbackInfoMsg);
 
+    callback_info_attach_session(callback, enif_session);
+
     CassFuture* future = cass_session_close(enif_session->session);
     CassError error = cass_future_set_callback(future, on_session_closed, callback);
     cass_future_free(future);
 
     if(error != CASS_OK)
+    {
+        callback_info_free(callback);
         return cass_error_to_nif_term(env, error);
+    }
 
     return ATOMS.atomOk;
 }
@@ -286,7 +331,15 @@ ERL_NIF_TERM nif_cass_session_prepare(ErlNifEnv* env, int argc, const ERL_NIF_TE
     if(!enif_is_identical(ATOMS.atomOk, parse_result))
         return parse_result;
 
+    bool connected = enif_session->connected.load();
+    if(!connected)
+        return make_error(env, erlcass::kNoConnectionsAvailableMsg);
+
     callback_statement_info* callback = static_cast<callback_statement_info*>(enif_alloc(sizeof(callback_statement_info)));
+
+    if(callback == NULL)
+        return make_error(env, erlcass::kFailedToCreateCallbackInfoMsg);
+
     callback->pid = pid;
     callback->prepared_res = data->resCassPrepared;
     callback->env = enif_alloc_env();
@@ -297,8 +350,22 @@ ERL_NIF_TERM nif_cass_session_prepare(ErlNifEnv* env, int argc, const ERL_NIF_TE
 
     CassFuture* future = cass_session_prepare_n(enif_session->session, BIN_TO_STR(q.query.data), q.query.size);
 
+    if(future == NULL)
+    {
+        enif_free_env(callback->env);
+        enif_free(callback);
+        return make_error(env, erlcass::kFailedToAllocResourceMsg);
+    }
+
     CassError error = cass_future_set_callback(future, on_statement_prepared, callback);
     cass_future_free(future);
+
+    if(error != CASS_OK)
+    {
+        enif_free_env(callback->env);
+        enif_free(callback);
+    }
+
     return cass_error_to_nif_term(env, error);
 }
 

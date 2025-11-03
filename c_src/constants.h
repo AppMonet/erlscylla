@@ -15,6 +15,7 @@ extern const char kBindFailedUnknownColumnType[];
 extern const char kFailedToSetUnknownType[];
 extern const char kUnknownKeyspace[];
 extern const char kUnknownTable[];
+extern const char kNoConnectionsAvailableMsg[];
 
 // misc atoms
 
